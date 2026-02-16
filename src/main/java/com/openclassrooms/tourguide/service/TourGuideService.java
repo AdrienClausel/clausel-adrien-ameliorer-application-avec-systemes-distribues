@@ -1,5 +1,7 @@
 package com.openclassrooms.tourguide.service;
 
+import com.openclassrooms.tourguide.dto.UserAttractions;
+import com.openclassrooms.tourguide.dto.UserAttractionsInfo;
 import com.openclassrooms.tourguide.helper.InternalTestHelper;
 import com.openclassrooms.tourguide.tracker.Tracker;
 import com.openclassrooms.tourguide.user.User;
@@ -7,14 +9,7 @@ import com.openclassrooms.tourguide.user.UserReward;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -27,6 +22,7 @@ import gpsUtil.location.Attraction;
 import gpsUtil.location.Location;
 import gpsUtil.location.VisitedLocation;
 
+import rewardCentral.RewardCentral;
 import tripPricer.Provider;
 import tripPricer.TripPricer;
 
@@ -95,15 +91,39 @@ public class TourGuideService {
 		return visitedLocation;
 	}
 
-	public List<Attraction> getNearByAttractions(VisitedLocation visitedLocation) {
-		List<Attraction> nearbyAttractions = new ArrayList<>();
-		for (Attraction attraction : gpsUtil.getAttractions()) {
-			if (rewardsService.isWithinAttractionProximity(attraction, visitedLocation.location)) {
-				nearbyAttractions.add(attraction);
-			}
+	public UserAttractions getNearByAttractions(VisitedLocation visitedLocation) {
+        RewardCentral rewardCentral = new RewardCentral();
+
+        PriorityQueue<UserAttractionsInfo> fiveNearAttractions = new PriorityQueue<>(5, Comparator.comparing(UserAttractionsInfo::distance).reversed());
+
+        for (Attraction attraction : gpsUtil.getAttractions()) {
+			var distance = rewardsService.getDistance(visitedLocation.location, new Location(attraction.latitude, attraction.longitude));
+
+            var userAttractionInfo = new UserAttractionsInfo(
+                    attraction.attractionName,
+                    new Location(
+                            attraction.latitude,
+                            attraction.longitude
+                    ),
+                    distance,
+                    rewardCentral.getAttractionRewardPoints(
+                            attraction.attractionId,
+                            visitedLocation.userId
+                    )
+            );
+
+            if (fiveNearAttractions.size() < 5) {
+                fiveNearAttractions.add(userAttractionInfo);
+            } else if (distance < fiveNearAttractions.peek().distance()) {
+                fiveNearAttractions.poll();
+                fiveNearAttractions.add(userAttractionInfo);
+            }
 		}
 
-		return nearbyAttractions;
+        List<UserAttractionsInfo> userAttractionsInfos = new ArrayList<>(fiveNearAttractions);
+        userAttractionsInfos.sort(Comparator.comparing(UserAttractionsInfo::distance));
+
+        return new UserAttractions(visitedLocation.location, userAttractionsInfos);
 	}
 
 	private void addShutDownHook() {
