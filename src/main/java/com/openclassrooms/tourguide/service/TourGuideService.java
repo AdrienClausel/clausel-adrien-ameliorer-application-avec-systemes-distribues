@@ -10,6 +10,10 @@ import com.openclassrooms.tourguide.user.UserReward;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -34,6 +38,9 @@ public class TourGuideService {
 	private final TripPricer tripPricer = new TripPricer();
 	public final Tracker tracker;
 	boolean testMode = true;
+
+    private final ExecutorService gpsExecutor =
+            Executors.newFixedThreadPool(100);
 
 	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
 		this.gpsUtil = gpsUtil;
@@ -85,11 +92,26 @@ public class TourGuideService {
 	}
 
 	public VisitedLocation trackUserLocation(User user) {
-		VisitedLocation visitedLocation = gpsUtil.getUserLocation(user.getUserId());
-		user.addToVisitedLocations(visitedLocation);
-		rewardsService.calculateRewards(user);
+        VisitedLocation visitedLocation = gpsUtil.getUserLocation(user.getUserId());
+        user.addToVisitedLocations(visitedLocation);
+        rewardsService.calculateRewards(user);
 		return visitedLocation;
 	}
+
+    public void trackUsersLocation(List<User> users){
+        List<CompletableFuture<Void>> futures =
+                users.stream()
+                        .map(user ->
+                            CompletableFuture.runAsync(() ->
+                                    trackUserLocation(user),
+                                    gpsExecutor
+                            )
+                ).toList();
+
+        CompletableFuture.allOf(
+                futures.toArray(new CompletableFuture[0])
+        ).join();
+    }
 
 	public UserAttractions getNearByAttractions(VisitedLocation visitedLocation) {
         RewardCentral rewardCentral = new RewardCentral();
